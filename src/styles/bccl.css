@@ -1,0 +1,164 @@
+/* BCCL Enterprise IMS — Custom Styles */
+
+:root {
+  --navy: #0c1a2e;
+  --navy-mid: #1e3a5f;
+  --navy-light: #2563eb;
+  --accent-gold: #f59e0b;
+  --accent-cyan: #0ea5e9;
+  --surface: #f0f4f8;
+  --surface-card: #ffffff;
+  --border-subtle: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --danger-light: #ef4444;
+  --purple: #7c3aed;
+  --teal: #0891b2;
+}
+
+/* Sidebar hover transitions */
+.nav-item {
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+/* Table row hover */
+.data-row:hover {
+  background: #f0f7ff !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Chart container */
+.recharts-cartesian-grid-horizontal line { stroke: #f1f5f9; }
+.recharts-cartesian-grid-vertical line { display: none; }
+
+/* Card elevation */
+.card-elevated {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+.card-elevated:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+}
+
+/* Pulse animation for critical alerts */
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-critical { animation: pulse-red 2s ease-in-out infinite; }
+
+/* Table sticky header */
+.sticky-header th { position: sticky; top: 0; z-index: 10; }
+
+/* Input focus ring */
+.ims-input:focus {
+  outline: none;
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+/* Button ripple effect */
+.btn-primary {
+  background: #1d4ed8;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.btn-primary:hover { background: #1e40af; }
+.btn-primary:active { transform: scale(0.98); }
+
+.btn-secondary {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.btn-secondary:hover { background: #f1f5f9; }
+
+/* Sidebar active indicator */
+.sidebar-active-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+  background: #3b82f6;
+}
+
+/* Status dot pulse for online */
+@keyframes status-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+.status-online { animation: status-pulse 2s infinite; }
+
+/* KPI card gradient accent */
+.kpi-accent-blue { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); }
+.kpi-accent-purple { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); }
+.kpi-accent-amber { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); }
+.kpi-accent-red { background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); }
+.kpi-accent-green { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); }
+
+/* App shell primitives */
+.ims-shell {
+  font-family: "Inter", sans-serif;
+  background: var(--surface);
+}
+
+.ims-sidebar {
+  background: linear-gradient(180deg, var(--navy) 0%, #0f2744 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ims-topbar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ims-icon-btn {
+  background: #f8fafc;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ims-icon-btn:hover {
+  background: #f1f5f9;
+}
+
+.ims-nav-link {
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.ims-nav-link-active {
+  background: rgba(37, 99, 235, 0.18);
+  color: #93c5fd;
+}
+
+.ims-nav-link-inactive {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.ims-quick-alert {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
