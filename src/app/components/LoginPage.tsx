@@ -248,10 +248,10 @@ export function LoginPage() {
                 </Button>
               </form>
 
-              {/* Demo hint */}
+              {/* Backend auth */}
               <div className="mt-5 p-3 rounded-lg" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                <p style={{ fontSize: "0.75rem", color: "#1d4ed8", fontWeight: 500, marginBottom: "0.25rem" }}>Demo Access</p>
-                <p style={{ fontSize: "0.72rem", color: "#475569" }}>Enter any Employee ID and Password to explore the system.</p>
+                <p style={{ fontSize: "0.75rem", color: "#1d4ed8", fontWeight: 500, marginBottom: "0.25rem" }}>Sign in with your employee credentials</p>
+                <p style={{ fontSize: "0.72rem", color: "#475569" }}>Authentication is handled by the deployed backend API.</p>
               </div>
             </div>
           </div>

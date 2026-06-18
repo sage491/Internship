@@ -1,15 +1,12 @@
+import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, PieChart, Pie, Cell
+  ResponsiveContainer
 } from "recharts";
 import { Download, Printer, FileText, TrendingUp, TrendingDown, BarChart3, Activity, Calendar, Filter } from "lucide-react";
-
-const monthlyValue: { month: string; receipts: number; issues: number }[] = [];
-
-const deptConsumption: { month: string; underground: number; transport: number; mechanical: number; surface: number }[] = [];
-
-const supplierPerf: { name: string; onTime: number; quality: number; value: number }[] = [];
+import { getDashboardData, getSuppliers } from "../lib/appData";
+import { ApiError } from "../lib/api";
 
 const COLORS = ["#2563eb","#7c3aed","#059669","#d97706","#dc2626"];
 
@@ -38,6 +35,78 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export function Reports() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getDashboardData>> | null>(null);
+  const [supplierCount, setSupplierCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const [dashboardData, suppliers] = await Promise.all([getDashboardData(), getSuppliers()]);
+        if (!active) return;
+        setDashboard(dashboardData);
+        setSupplierCount(suppliers.length);
+      } catch (err) {
+        if (active) setError(err instanceof ApiError ? err.message : "Unable to load report data.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const monthlyValue = useMemo(
+    () => dashboard?.usageTrendData.map((row) => ({
+      month: row.month,
+      receipts: row.received,
+      issues: row.issued,
+    })) ?? [],
+    [dashboard],
+  );
+
+  const deptConsumption = useMemo(
+    () => dashboard?.monthlyConsumptionData.map((row) => ({
+      month: row.month,
+      underground: row.parts,
+      transport: row.fuel,
+      mechanical: row.safety,
+      surface: 0,
+    })) ?? [],
+    [dashboard],
+  );
+
+  const supplierPerf = useMemo(
+    () => (dashboard ? [{ name: "Active Suppliers", onTime: 100, quality: 100, value: supplierCount }] : []),
+    [dashboard, supplierCount],
+  );
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-border bg-card p-8 text-sm text-muted-foreground">
+        Loading report data...
+      </div>
+    );
+  }
+
+  if (error || !dashboard) {
+    return (
+      <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+        {error || "Unable to load report data."}
+      </div>
+    );
+  }
+
+  const kpi = dashboard.kpiData;
+
   return (
     <div className="space-y-5" style={{ fontFamily: "'Inter', sans-serif" }}>
 
@@ -66,10 +135,10 @@ export function Reports() {
       {/* Summary stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: "Opening Stock Value",  val: "—", ch: "",       color: "#0f172a" },
-          { label: "Total Receipts (MTD)", val: "—",  ch: "", color: "#16a34a" },
-          { label: "Total Issues (MTD)",   val: "—",   ch: "",  color: "#d97706" },
-          { label: "Closing Stock Value",  val: "—", ch: "",  color: "#2563eb" },
+          { label: "Total Inventory Items",  val: kpi.totalItems.toLocaleString(), ch: "",       color: "#0f172a" },
+          { label: "Total Receipts (MTD)", val: monthlyValue.reduce((s, r) => s + r.receipts, 0).toLocaleString(),  ch: "", color: "#16a34a" },
+          { label: "Total Issues (MTD)",   val: monthlyValue.reduce((s, r) => s + r.issues, 0).toLocaleString(),   ch: "",  color: "#d97706" },
+          { label: "Total Stock Units",  val: kpi.totalValue.toLocaleString(), ch: "",  color: "#2563eb" },
         ].map(s => (
           <div key={s.label} className="rounded-2xl p-5 card-elevated" style={{ background: "#fff", border: "1px solid #e2e8f0" }}>
             <p style={{ fontSize: "0.68rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{s.label}</p>

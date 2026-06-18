@@ -1,18 +1,4 @@
-import {
-  categoryData,
-  inventoryItems as seedInventoryItems,
-  kpiData,
-  monthlyConsumptionData,
-  recentActivity,
-  requiredItemsData,
-  stockInData,
-  stockOutData,
-  suppliersData,
-  usageTrendData,
-  usedItemsData,
-  usersData,
-} from "../data/mockData";
-import { getAuthHeaders } from "./auth";
+import { apiRequest } from "./api";
 
 export type InventoryStatus = "In Stock" | "Low Stock" | "Out of Stock";
 
@@ -96,154 +82,179 @@ export type UserItem = {
   lastLogin: string;
 };
 
-const delay = (ms = 180) => new Promise((resolve) => setTimeout(resolve, ms));
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-const USE_REMOTE = Boolean(API_BASE);
+export type DashboardData = {
+  kpiData: {
+    totalItems: number;
+    usedItems: number;
+    requiredItems: number;
+    lowStockItems: number;
+    totalValue: number;
+  };
+  usageTrendData: { month: string; issued: number; received: number }[];
+  categoryData: { name: string; value: number; color: string }[];
+  monthlyConsumptionData: { month: string; fuel: number; parts: number; safety: number }[];
+  recentActivity: DashboardActivity[];
+};
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    ...init,
-  });
+export type CreateInventoryInput = Omit<InventoryItem, "id" | "status" | "lastUpdated"> & {
+  id?: string;
+};
 
-  if (response.status === 401) {
-    throw new Error("Session expired. Please sign in again.");
-  }
+export type CreateStockInInput = Omit<StockInItem, "id"> & { id?: string };
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
+export type CreateStockOutInput = Omit<StockOutItem, "id"> & { id?: string };
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+export type CreateSupplierInput = Omit<SupplierItem, "id"> & { id?: string };
 
-  return (await response.json()) as T;
+export type CreateUserInput = Omit<UserItem, "lastLogin"> & {
+  password?: string;
+  lastLogin?: string;
+};
+
+export function computeInventoryStatus(quantity: number, minStock: number): InventoryStatus {
+  if (quantity <= 0) return "Out of Stock";
+  if (quantity < minStock) return "Low Stock";
+  return "In Stock";
 }
-
-let inventoryStore: InventoryItem[] = seedInventoryItems.map((item) => ({ ...item }));
-let usedItemsStore: UsedItem[] = usedItemsData.map((item) => ({ ...item }));
-let requiredItemsStore: RequiredItem[] = requiredItemsData.map((item) => ({ ...item }));
-let stockInStore: StockInItem[] = stockInData.map((item) => ({ ...item }));
-let stockOutStore: StockOutItem[] = stockOutData.map((item) => ({ ...item }));
-let suppliersStore: SupplierItem[] = suppliersData.map((item) => ({ ...item }));
-let usersStore: UserItem[] = usersData.map((item) => ({ ...item }));
 
 export async function getInventoryItems(): Promise<InventoryItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<InventoryItem[]>("/api/inventory");
-  }
-  await delay();
-  return inventoryStore.map((item) => ({ ...item }));
+  return apiRequest<InventoryItem[]>("/api/inventory");
 }
 
-export async function createInventoryItem(item: InventoryItem): Promise<InventoryItem> {
-  if (USE_REMOTE) {
-    return requestJson<InventoryItem>("/api/inventory", {
-      method: "POST",
-      body: JSON.stringify(item),
-    });
-  }
-  await delay();
-  inventoryStore = [item, ...inventoryStore.filter((current) => current.id !== item.id)];
-  return { ...item };
+export async function createInventoryItem(input: CreateInventoryInput): Promise<InventoryItem> {
+  const quantity = Number(input.quantity ?? 0);
+  const minStock = Number(input.minStock ?? 0);
+  const item: InventoryItem = {
+    id: input.id ?? `INV-${Date.now()}`,
+    name: input.name,
+    category: input.category,
+    unit: input.unit,
+    quantity,
+    minStock,
+    location: input.location,
+    status: computeInventoryStatus(quantity, minStock),
+    lastUpdated: new Date().toISOString().slice(0, 10),
+  };
+
+  return apiRequest<InventoryItem>("/api/inventory", {
+    method: "POST",
+    body: JSON.stringify(item),
+  });
+}
+
+export async function updateInventoryItem(id: string, patch: Partial<InventoryItem>): Promise<InventoryItem> {
+  return apiRequest<InventoryItem>(`/api/inventory/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
 }
 
 export async function removeInventoryItem(id: string): Promise<void> {
-  if (USE_REMOTE) {
-    await requestJson<void>(`/api/inventory/${id}`, { method: "DELETE" });
-    return;
-  }
-  await delay();
-  inventoryStore = inventoryStore.filter((item) => item.id !== id);
+  await apiRequest<void>(`/api/inventory/${id}`, { method: "DELETE" });
 }
 
-export async function getDashboardData() {
-  if (USE_REMOTE) {
-    return requestJson<{
-      kpiData: typeof kpiData;
-      usageTrendData: typeof usageTrendData;
-      categoryData: typeof categoryData;
-      monthlyConsumptionData: typeof monthlyConsumptionData;
-      recentActivity: DashboardActivity[];
-    }>("/api/dashboard");
-  }
-  await delay();
-  return {
-    kpiData,
-    usageTrendData,
-    categoryData,
-    monthlyConsumptionData,
-    recentActivity: recentActivity.map((item) => ({ ...item })) as DashboardActivity[],
-  };
+export async function getDashboardData(): Promise<DashboardData> {
+  return apiRequest<DashboardData>("/api/dashboard");
 }
 
 export async function getReferenceData() {
-  if (USE_REMOTE) {
-    return requestJson<{
-      requiredItemsData: RequiredItem[];
-      stockInData: StockInItem[];
-      stockOutData: StockOutItem[];
-      suppliersData: SupplierItem[];
-      usedItemsData: UsedItem[];
-      usersData: UserItem[];
-    }>("/api/reference");
-  }
-  await delay();
-  return {
-    requiredItemsData: requiredItemsStore.map((item) => ({ ...item })),
-    stockInData: stockInStore.map((item) => ({ ...item })),
-    stockOutData: stockOutStore.map((item) => ({ ...item })),
-    suppliersData: suppliersStore.map((item) => ({ ...item })),
-    usedItemsData: usedItemsStore.map((item) => ({ ...item })),
-    usersData: usersStore.map((item) => ({ ...item })),
-  };
+  return apiRequest<{
+    requiredItemsData: RequiredItem[];
+    stockInData: StockInItem[];
+    stockOutData: StockOutItem[];
+    suppliersData: SupplierItem[];
+    usedItemsData: UsedItem[];
+    usersData: UserItem[];
+  }>("/api/reference");
 }
 
 export async function getUsedItems(): Promise<UsedItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<UsedItem[]>("/api/used-items");
-  }
-  await delay();
-  return usedItemsStore.map((item) => ({ ...item }));
+  return apiRequest<UsedItem[]>("/api/used-items");
 }
 
 export async function getRequiredItems(): Promise<RequiredItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<RequiredItem[]>("/api/required-items");
-  }
-  await delay();
-  return requiredItemsStore.map((item) => ({ ...item }));
+  return apiRequest<RequiredItem[]>("/api/required-items");
 }
 
 export async function getStockInItems(): Promise<StockInItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<StockInItem[]>("/api/stock-in");
-  }
-  await delay();
-  return stockInStore.map((item) => ({ ...item }));
+  return apiRequest<StockInItem[]>("/api/stock-in");
+}
+
+export async function createStockInItem(input: CreateStockInInput): Promise<StockInItem> {
+  const record: StockInItem = {
+    id: input.id ?? `GRN-${Date.now()}`,
+    item: input.item,
+    supplier: input.supplier,
+    quantity: Number(input.quantity),
+    poNumber: input.poNumber,
+    date: input.date || new Date().toISOString().slice(0, 10),
+    remarks: input.remarks ?? "",
+  };
+
+  return apiRequest<StockInItem>("/api/stock-in", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
 }
 
 export async function getStockOutItems(): Promise<StockOutItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<StockOutItem[]>("/api/stock-out");
-  }
-  await delay();
-  return stockOutStore.map((item) => ({ ...item }));
+  return apiRequest<StockOutItem[]>("/api/stock-out");
+}
+
+export async function createStockOutItem(input: CreateStockOutInput): Promise<StockOutItem> {
+  const record: StockOutItem = {
+    id: input.id ?? `ISS-${Date.now()}`,
+    item: input.item,
+    quantity: Number(input.quantity),
+    department: input.department,
+    employee: input.employee,
+    date: input.date || new Date().toISOString().slice(0, 10),
+    purpose: input.purpose ?? "",
+  };
+
+  return apiRequest<StockOutItem>("/api/stock-out", {
+    method: "POST",
+    body: JSON.stringify(record),
+  });
 }
 
 export async function getSuppliers(): Promise<SupplierItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<SupplierItem[]>("/api/suppliers");
-  }
-  await delay();
-  return suppliersStore.map((item) => ({ ...item }));
+  return apiRequest<SupplierItem[]>("/api/suppliers");
+}
+
+export async function createSupplier(input: CreateSupplierInput): Promise<SupplierItem> {
+  const supplier: SupplierItem = {
+    id: input.id ?? `SUP-${Date.now()}`,
+    name: input.name,
+    contact: input.contact,
+    phone: input.phone,
+    email: input.email,
+    address: input.address,
+    status: input.status ?? "Active",
+  };
+
+  return apiRequest<SupplierItem>("/api/suppliers", {
+    method: "POST",
+    body: JSON.stringify(supplier),
+  });
 }
 
 export async function getUsers(): Promise<UserItem[]> {
-  if (USE_REMOTE) {
-    return requestJson<UserItem[]>("/api/users");
-  }
-  await delay();
-  return usersStore.map((item) => ({ ...item }));
+  return apiRequest<UserItem[]>("/api/users");
+}
+
+export async function createUser(input: CreateUserInput): Promise<UserItem> {
+  return apiRequest<UserItem>("/api/users", {
+    method: "POST",
+    body: JSON.stringify({
+      id: input.id,
+      name: input.name,
+      role: input.role,
+      department: input.department,
+      email: input.email,
+      status: input.status,
+      lastLogin: input.lastLogin ?? "",
+      password: input.password ?? "",
+    }),
+  });
 }

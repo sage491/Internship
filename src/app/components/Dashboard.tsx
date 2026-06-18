@@ -6,6 +6,7 @@ import {
   FileText, ArrowRight, ChevronRight
 } from "lucide-react";
 import { getDashboardData, type DashboardActivity } from "../lib/appData";
+import { ApiError } from "../lib/api";
 import { toast } from "sonner";
 
 /* ── Animated counter hook ── */
@@ -262,15 +263,22 @@ export function Dashboard() {
   const [dashboardData, setDashboardData] = useState<Awaited<ReturnType<typeof getDashboardData>> | null>(null);
   const [filteredActivity, setFiltered] = useState<DashboardActivity[]>([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const loadDashboard = async () => {
     try {
+      setLoading(true);
+      setLoadError("");
       const data = await getDashboardData();
       setDashboardData(data);
       setFiltered(data.recentActivity);
       setLastRefresh(new Date());
-    } catch {
+    } catch (err) {
       setDashboardData(null);
+      setLoadError(err instanceof ApiError ? err.message : "Unable to load dashboard data.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -283,10 +291,23 @@ export function Dashboard() {
     toast.success("Dashboard refreshed successfully");
   };
 
-  if (!dashboardData) {
+  if (loading) {
     return (
       <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-border bg-card p-8 text-sm text-muted-foreground">
         Loading dashboard data...
+      </div>
+    );
+  }
+
+  if (loadError || !dashboardData) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+          {loadError || "Unable to load dashboard data."}
+        </div>
+        <button onClick={() => void loadDashboard()} className="btn-secondary px-4 py-2 rounded-xl">
+          Retry
+        </button>
       </div>
     );
   }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Search, Plus, Edit2, Shield, Key, UserCheck, X } from "lucide-react";
-import { getUsers, type UserItem } from "../lib/appData";
+import { toast } from "sonner";
+import { getUsers, createUser, type UserItem } from "../lib/appData";
+import { ApiError } from "../lib/api";
 
 const ROLE_CFG: Record<string, { bg: string; color: string; border: string }> = {
   Administrator:      { bg: "#fef2f2", color: "#dc2626", border: "#fecaca" },
@@ -28,6 +30,15 @@ export function Users() {
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    id: "",
+    email: "",
+    department: "",
+    role: "Viewer",
+    password: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -57,6 +68,34 @@ export function Users() {
     const matchR  = role === "All" || u.role === role;
     return matchQ && matchR;
   });
+
+  const handleCreateUser = async () => {
+    if (!form.name.trim() || !form.id.trim() || !form.email.trim() || !form.department.trim()) {
+      toast.error("Name, employee ID, email, and department are required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const created = await createUser({
+        name: form.name.trim(),
+        id: form.id.trim(),
+        email: form.email.trim(),
+        department: form.department.trim(),
+        role: form.role,
+        status: "Active",
+        password: form.password,
+      });
+      setUsersData((current) => [created, ...current.filter((user) => user.id !== created.id)]);
+      setForm({ name: "", id: "", email: "", department: "", role: "Viewer", password: "" });
+      setShowAdd(false);
+      toast.success("User account created");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to create user.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -247,23 +286,38 @@ export function Users() {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              {["Full Name *","Employee ID *","Email Address *","Department *"].map(f => (
-                <div key={f}>
-                  <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{f}</label>
-                  <input placeholder={`Enter ${f.replace(" *","").toLowerCase()}`} className="ims-input w-full px-3 py-2.5 rounded-xl"
+              {[
+                { label: "Full Name *", key: "name" },
+                { label: "Employee ID *", key: "id" },
+                { label: "Email Address *", key: "email" },
+                { label: "Department *", key: "department" },
+                { label: "Temporary Password", key: "password" },
+              ].map(f => (
+                <div key={f.key}>
+                  <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{f.label}</label>
+                  <input
+                    placeholder={`Enter ${f.label.replace(" *","").toLowerCase()}`}
+                    value={form[f.key as keyof typeof form]}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    className="ims-input w-full px-3 py-2.5 rounded-xl"
                     style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }} />
                 </div>
               ))}
               <div>
                 <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Assign Role *</label>
-                <select className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
+                <select
+                  value={form.role}
+                  onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))}
+                  className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
                   {Object.keys(ROLE_CFG).map(r => <option key={r}>{r}</option>)}
                 </select>
               </div>
             </div>
             <div className="flex gap-3 px-6 py-4 justify-end" style={{ borderTop: "1px solid #f1f5f9", background: "#f8fafc" }}>
               <button onClick={() => setShowAdd(false)} className="btn-secondary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px" }}>Cancel</button>
-              <button onClick={() => setShowAdd(false)} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>Create Account</button>
+              <button onClick={handleCreateUser} disabled={saving} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
+                {saving ? "Creating..." : "Create Account"}
+              </button>
             </div>
           </div>
         </div>

@@ -172,6 +172,33 @@ export function getDataSource(): "supabase" | "memory" {
   return isSupabaseConfigured() ? "supabase" : "memory";
 }
 
+function computeInventoryStatus(quantity: number, minStock: number): InventoryItem["status"] {
+  if (quantity <= 0) return "Out of Stock";
+  if (quantity < minStock) return "Low Stock";
+  return "In Stock";
+}
+
+async function findInventoryByItemName(name: string): Promise<InventoryItem | null> {
+  const items = await getInventoryItems();
+  const normalized = name.trim().toLowerCase();
+  return items.find((item) => item.name.trim().toLowerCase() === normalized) ?? null;
+}
+
+async function adjustInventoryQuantity(itemName: string, delta: number): Promise<InventoryItem | null> {
+  const existing = await findInventoryByItemName(itemName);
+  if (!existing) return null;
+
+  const quantity = Math.max(0, existing.quantity + delta);
+  const updated: InventoryItem = {
+    ...existing,
+    quantity,
+    status: computeInventoryStatus(quantity, existing.minStock),
+    lastUpdated: new Date().toISOString().slice(0, 10),
+  };
+
+  return upsertInventoryItem(updated);
+}
+
 export async function getInventoryItems(): Promise<InventoryItem[]> {
   if (!isSupabaseConfigured()) {
     return memoryInventory.map((item) => ({ ...item }));
@@ -215,6 +242,27 @@ export async function upsertInventoryItem(item: InventoryItem): Promise<Inventor
 
   if (error) throw error;
   return mapInventory(data as InventoryRow);
+}
+
+export async function updateInventoryItem(id: string, patch: Partial<InventoryItem>): Promise<InventoryItem | null> {
+  const items = await getInventoryItems();
+  const existing = items.find((item) => item.id === id);
+  if (!existing) return null;
+
+  const quantity = patch.quantity !== undefined ? Number(patch.quantity) : existing.quantity;
+  const minStock = patch.minStock !== undefined ? Number(patch.minStock) : existing.minStock;
+
+  const updated: InventoryItem = {
+    ...existing,
+    ...patch,
+    id: existing.id,
+    quantity,
+    minStock,
+    status: patch.status ?? computeInventoryStatus(quantity, minStock),
+    lastUpdated: new Date().toISOString().slice(0, 10),
+  };
+
+  return upsertInventoryItem(updated);
 }
 
 export async function deleteInventoryItem(id: string): Promise<boolean> {
@@ -264,6 +312,32 @@ export async function getStockInItems(): Promise<StockInItem[]> {
   return (data as StockInRow[]).map(mapStockIn);
 }
 
+export async function createStockInItem(record: StockInItem): Promise<StockInItem> {
+  if (!isSupabaseConfigured()) {
+    memoryStockIn.unshift(record);
+    await adjustInventoryQuantity(record.item, record.quantity);
+    return { ...record };
+  }
+
+  const { data, error } = await getSupabase()
+    .from("stock_in")
+    .insert({
+      id: record.id,
+      item: record.item,
+      supplier: record.supplier,
+      quantity: record.quantity,
+      po_number: record.poNumber,
+      date: record.date,
+      remarks: record.remarks,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  await adjustInventoryQuantity(record.item, record.quantity);
+  return mapStockIn(data as StockInRow);
+}
+
 export async function getStockOutItems(): Promise<StockOutItem[]> {
   if (!isSupabaseConfigured()) {
     return memoryStockOut.map((item) => ({ ...item }));
@@ -272,6 +346,61 @@ export async function getStockOutItems(): Promise<StockOutItem[]> {
   const { data, error } = await getSupabase().from("stock_out").select("*").order("date", { ascending: false });
   if (error) throw error;
   return (data as StockOutRow[]).map(mapStockOut);
+}
+
+export async function createStockOutItem(record: StockOutItem): Promise<StockOutItem> {
+  const inventoryItem = await findInventoryByItemName(record.item);
+  if (!inventoryItem) {
+    throw new Error(`Inventory item "${record.item}" was not found.`);
+  }
+  if (inventoryItem.quantity < record.quantity) {
+    throw new Error(`Insufficient stock for "${record.item}". Available: ${inventoryItem.quantity}.`);
+  }
+
+  if (!isSupabaseConfigured()) {
+    memoryStockOut.unshift(record);
+    await adjustInventoryQuantity(record.item, -record.quantity);
+    memoryUsed.unshift({
+      id: `USED-${Date.now()}`,
+      item: record.item,
+      quantity: record.quantity,
+      department: record.department,
+      issuedBy: record.employee,
+      date: record.date,
+      remarks: record.purpose,
+    });
+    return { ...record };
+  }
+
+  const { data, error } = await getSupabase()
+    .from("stock_out")
+    .insert({
+      id: record.id,
+      item: record.item,
+      quantity: record.quantity,
+      department: record.department,
+      employee: record.employee,
+      date: record.date,
+      purpose: record.purpose,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  await adjustInventoryQuantity(record.item, -record.quantity);
+
+  await getSupabase().from("used_items").insert({
+    id: `USED-${Date.now()}`,
+    item: record.item,
+    quantity: record.quantity,
+    department: record.department,
+    issued_by: record.employee,
+    date: record.date,
+    remarks: record.purpose,
+  });
+
+  return mapStockOut(data as StockOutRow);
 }
 
 export async function getSuppliers(): Promise<SupplierItem[]> {
@@ -284,6 +413,30 @@ export async function getSuppliers(): Promise<SupplierItem[]> {
   return (data as SupplierRow[]).map(mapSupplier);
 }
 
+export async function createSupplier(supplier: SupplierItem): Promise<SupplierItem> {
+  if (!isSupabaseConfigured()) {
+    memorySuppliers.unshift(supplier);
+    return { ...supplier };
+  }
+
+  const { data, error } = await getSupabase()
+    .from("suppliers")
+    .insert({
+      id: supplier.id,
+      name: supplier.name,
+      contact: supplier.contact,
+      phone: supplier.phone,
+      email: supplier.email,
+      address: supplier.address,
+      status: supplier.status,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapSupplier(data as SupplierRow);
+}
+
 export async function getUsers(): Promise<UserItem[]> {
   if (!isSupabaseConfigured()) {
     return memoryUsers.map((item) => ({ ...item }));
@@ -292,6 +445,31 @@ export async function getUsers(): Promise<UserItem[]> {
   const { data, error } = await getSupabase().from("users").select("id, name, role, department, email, status, last_login").order("name");
   if (error) throw error;
   return (data as UserRow[]).map(mapUser);
+}
+
+export async function createUser(user: UserItem, password = ""): Promise<UserItem> {
+  if (!isSupabaseConfigured()) {
+    memoryUsers.unshift(user);
+    return { ...user };
+  }
+
+  const { data, error } = await getSupabase()
+    .from("users")
+    .insert({
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      department: user.department,
+      email: user.email,
+      status: user.status,
+      last_login: user.lastLogin,
+      password,
+    })
+    .select("id, name, role, department, email, status, last_login")
+    .single();
+
+  if (error) throw error;
+  return mapUser(data as UserRow);
 }
 
 export async function getDashboardData() {

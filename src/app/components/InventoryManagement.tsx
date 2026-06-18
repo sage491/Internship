@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
+import { useNavigate } from "react-router";
 import {
   Search, Filter, Download, Plus, Eye, Edit2, Trash2,
   ChevronUp, ChevronDown, X, Package, CheckCircle2,
   ChevronRight, MapPin, Tag, AlertTriangle
 } from "lucide-react";
-import { getInventoryItems, removeInventoryItem, type InventoryItem } from "../lib/appData";
+import { getInventoryItems, createInventoryItem, updateInventoryItem, removeInventoryItem, type InventoryItem } from "../lib/appData";
+import { ApiError } from "../lib/api";
 import { toast } from "sonner";
 
 const CATEGORIES = ["All Categories","Safety Equipment","Mining Tools","Machinery Parts","Fuel","Explosives","Lubricants","Consumables"];
@@ -44,6 +46,7 @@ function SortBtn({ col, sortKey, dir, onClick }: { col: SortKey; sortKey: SortKe
 }
 
 export function InventoryManagement() {
+  const navigate = useNavigate();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [search,    setSearch]    = useState("");
   const [category,  setCategory]  = useState("All Categories");
@@ -57,6 +60,16 @@ export function InventoryManagement() {
   const [selected,  setSelected]  = useState<Set<string>>(new Set());
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    category: CATEGORIES[1],
+    unit: "Nos",
+    quantity: "",
+    minStock: "",
+    location: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -67,8 +80,10 @@ export function InventoryManagement() {
         setLoadError("");
         const items = await getInventoryItems();
         if (active) setInventoryItems(items);
-      } catch {
-        if (active) setLoadError("Unable to load inventory data right now.");
+      } catch (err) {
+        if (active) {
+          setLoadError(err instanceof ApiError ? err.message : "Unable to load inventory data right now.");
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -126,15 +141,76 @@ export function InventoryManagement() {
         return next;
       });
       toast.success(`"${name}" removed from inventory`, { description: "Item has been archived." });
-    } catch {
-      toast.error("Failed to remove inventory item");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to remove inventory item");
     }
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => { setSaved(false); setShowAdd(false); }, 2000);
-    toast.success("New inventory item added successfully");
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+
+    try {
+      await Promise.all(ids.map((id) => removeInventoryItem(id)));
+      setInventoryItems((current) => current.filter((item) => !selected.has(item.id)));
+      setSelected(new Set());
+      toast.success(`${ids.length} item(s) deleted`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete selected items");
+    }
+  };
+
+  const openCreateModal = () => {
+    setEditId(null);
+    setForm({ name: "", category: CATEGORIES[1], unit: "Nos", quantity: "", minStock: "", location: "" });
+    setSaved(false);
+    setShowAdd(true);
+  };
+
+  const openEditModal = (item: InventoryItem) => {
+    setEditId(item.id);
+    setForm({
+      name: item.name,
+      category: item.category,
+      unit: item.unit,
+      quantity: String(item.quantity),
+      minStock: String(item.minStock),
+      location: item.location,
+    });
+    setSaved(false);
+    setShowAdd(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.location.trim()) {
+      toast.error("Item name and location are required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const payload = {
+        name: form.name.trim(),
+        category: form.category,
+        unit: form.unit.trim() || "Nos",
+        quantity: Number(form.quantity) || 0,
+        minStock: Number(form.minStock) || 0,
+        location: form.location.trim(),
+      };
+      const savedItem = editId
+        ? await updateInventoryItem(editId, payload)
+        : await createInventoryItem(payload);
+
+      setInventoryItems((current) => [savedItem, ...current.filter((item) => item.id !== savedItem.id)]);
+      setForm({ name: "", category: CATEGORIES[1], unit: "Nos", quantity: "", minStock: "", location: "" });
+      setSaved(true);
+      setTimeout(() => { setSaved(false); setShowAdd(false); }, 2000);
+      toast.success(editId ? "Inventory item updated successfully" : "New inventory item added successfully");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to save inventory item");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleExport = () => toast.success("Excel export started", { description: "Your file will be ready in a moment." });
@@ -174,7 +250,7 @@ export function InventoryManagement() {
           {selected.size > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
               <span style={{ fontSize: "0.8rem", color: "#1d4ed8", fontWeight: 600 }}>{selected.size} selected</span>
-              <button onClick={() => { toast.error(`${selected.size} items deleted`); setSelected(new Set()); }}
+              <button onClick={handleBulkDelete}
                 style={{ background: "#dc2626", border: "none", color: "#fff", borderRadius: "6px", padding: "2px 8px", fontSize: "0.72rem", cursor: "pointer", fontWeight: 600 }}>
                 Delete
               </button>
@@ -186,7 +262,7 @@ export function InventoryManagement() {
           <button onClick={handleExport} className="btn-secondary flex items-center gap-2 px-4 py-2.5 rounded-xl" style={{ fontSize: "0.83rem", borderRadius: "10px" }}>
             <Download className="w-4 h-4" /> Export Excel
           </button>
-          <button onClick={() => setShowAdd(true)}
+          <button onClick={openCreateModal}
             className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl"
             style={{ fontSize: "0.83rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
             <Plus className="w-4 h-4" /> Add New Item
@@ -325,7 +401,7 @@ export function InventoryManagement() {
                             className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "#eff6ff", border: "none", cursor: "pointer" }}>
                             <Eye style={{ width: "13px", height: "13px", color: "#2563eb" }} />
                           </button>
-                          <button onClick={() => toast.info(`Edit mode: ${item.name}`)}
+                          <button onClick={() => openEditModal(item)}
                             className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "#f0fdf4", border: "none", cursor: "pointer" }}>
                             <Edit2 style={{ width: "13px", height: "13px", color: "#16a34a" }} />
                           </button>
@@ -362,17 +438,23 @@ export function InventoryManagement() {
                                 ))}
                               </div>
                               <div className="flex flex-col gap-2 justify-center">
-                                <button onClick={() => toast.info(`Stock Out recorded for ${item.name}`)}
+                                <button onClick={() => {
+                                  toast.info("Open Stock Out to issue this item.");
+                                  navigate("/stock-out");
+                                }}
                                   className="btn-primary w-full py-2 rounded-xl text-center flex items-center justify-center gap-1.5"
                                   style={{ fontSize: "0.78rem", borderRadius: "8px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
                                   ▼ Issue Item
                                 </button>
-                                <button onClick={() => toast.success(`Stock In recorded for ${item.name}`)}
+                                <button onClick={() => {
+                                  toast.info("Open Stock In to receive this item.");
+                                  navigate("/stock-in");
+                                }}
                                   className="w-full py-2 rounded-xl text-center flex items-center justify-center gap-1.5"
                                   style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", borderRadius: "8px" }}>
                                   ▲ Add Stock
                                 </button>
-                                <button onClick={() => { setExpanded(null); toast.info(`Edit mode: ${item.name}`); }}
+                                <button onClick={() => { setExpanded(null); openEditModal(item); }}
                                   className="btn-secondary w-full py-2 rounded-xl flex items-center justify-center gap-1.5"
                                   style={{ fontSize: "0.78rem", borderRadius: "8px" }}>
                                   ✎ Edit Details
@@ -386,7 +468,7 @@ export function InventoryManagement() {
                                 <span style={{ fontSize: "0.78rem", color: "#92400e" }}>
                                   Stock is below minimum level. Deficit: <strong>{item.minStock - item.quantity} {item.unit}</strong>. Consider raising a purchase indent.
                                 </span>
-                                <button onClick={() => toast.success("Purchase indent raised!")}
+                                <button onClick={() => navigate("/required-items")}
                                   style={{ marginLeft: "auto", background: "#d97706", border: "none", color: "#fff", borderRadius: "6px", padding: "3px 10px", fontSize: "0.72rem", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                                   Raise Indent
                                 </button>
@@ -475,7 +557,7 @@ export function InventoryManagement() {
                       <Package className="w-5 h-5" style={{ color: "#60a5fa" }} />
                     </div>
                     <div>
-                      <h2 style={{ color: "#fff", fontWeight: 700, fontSize: "1rem" }}>Add New Inventory Item</h2>
+                      <h2 style={{ color: "#fff", fontWeight: 700, fontSize: "1rem" }}>{editId ? "Edit Inventory Item" : "Add New Inventory Item"}</h2>
                       <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.72rem" }}>Fill in all required fields</p>
                     </div>
                   </div>
@@ -498,11 +580,32 @@ export function InventoryManagement() {
                       <div key={f.label} className={f.span === 2 ? "col-span-2" : ""}>
                         <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{f.label}</label>
                         {f.type === "select" ? (
-                          <select className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
+                          <select
+                            value={form.category}
+                            onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
+                            className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
                             {CATEGORIES.slice(1).map(c => <option key={c}>{c}</option>)}
                           </select>
                         ) : (
-                          <input type={f.type ?? "text"} placeholder={f.placeholder} className="ims-input w-full px-3 py-2.5 rounded-xl"
+                          <input
+                            type={f.type ?? "text"}
+                            placeholder={f.placeholder}
+                            value={
+                              f.label.startsWith("Item Name") ? form.name :
+                              f.label.startsWith("Unit of Measure") ? form.unit :
+                              f.label.startsWith("Current Quantity") ? form.quantity :
+                              f.label.startsWith("Minimum Stock") ? form.minStock :
+                              f.label.startsWith("Location") ? form.location : ""
+                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (f.label.startsWith("Item Name")) setForm((prev) => ({ ...prev, name: val }));
+                              else if (f.label.startsWith("Unit of Measure")) setForm((prev) => ({ ...prev, unit: val }));
+                              else if (f.label.startsWith("Current Quantity")) setForm((prev) => ({ ...prev, quantity: val }));
+                              else if (f.label.startsWith("Minimum Stock")) setForm((prev) => ({ ...prev, minStock: val }));
+                              else if (f.label.startsWith("Location")) setForm((prev) => ({ ...prev, location: val }));
+                            }}
+                            className="ims-input w-full px-3 py-2.5 rounded-xl"
                             style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }} />
                         )}
                       </div>
@@ -511,8 +614,8 @@ export function InventoryManagement() {
                 </div>
                 <div className="flex justify-end gap-3 px-6 py-4" style={{ borderTop: "1px solid #f1f5f9", background: "#f8fafc" }}>
                   <button onClick={() => setShowAdd(false)} className="btn-secondary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px" }}>Cancel</button>
-                  <button onClick={handleSave} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
-                    Save Item
+                  <button onClick={handleSave} disabled={saving} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
+                    {saving ? "Saving..." : editId ? "Update Item" : "Save Item"}
                   </button>
                 </div>
               </>

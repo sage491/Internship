@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Search, Plus, Eye, Edit2, Phone, Mail, MapPin, Star, X, LayoutGrid, List } from "lucide-react";
 import { toast } from "sonner";
-import { getSuppliers, type SupplierItem } from "../lib/appData";
+import { getSuppliers, createSupplier, type SupplierItem } from "../lib/appData";
+import { ApiError } from "../lib/api";
 
 export function Suppliers() {
   const [suppliersData, setSuppliersData] = useState<SupplierItem[]>([]);
@@ -10,6 +11,14 @@ export function Suppliers() {
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    contact: "",
+    phone: "",
+    email: "",
+    address: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -20,8 +29,8 @@ export function Suppliers() {
         setError("");
         const items = await getSuppliers();
         if (active) setSuppliersData(items);
-      } catch {
-        if (active) setError("Unable to load suppliers.");
+      } catch (err) {
+        if (active) setError(err instanceof ApiError ? err.message : "Unable to load suppliers.");
       } finally {
         if (active) setLoading(false);
       }
@@ -38,6 +47,33 @@ export function Suppliers() {
     s.id.toLowerCase().includes(search.toLowerCase()) ||
     s.contact.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleSaveSupplier = async () => {
+    if (!form.name.trim() || !form.contact.trim()) {
+      toast.error("Company name and contact person are required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const created = await createSupplier({
+        name: form.name.trim(),
+        contact: form.contact.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        address: form.address.trim(),
+        status: "Active",
+      });
+      setSuppliersData((current) => [created, ...current]);
+      setForm({ name: "", contact: "", phone: "", email: "", address: "" });
+      setShowAdd(false);
+      toast.success("Supplier added successfully");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to save supplier.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -220,14 +256,16 @@ export function Suppliers() {
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               {[
-                { l: "Company Name *", s: 2 }, { l: "Contact Person *", s: 1 },
-                { l: "Phone Number *", s: 1 },  { l: "Email Address *", s: 1 },
-                { l: "GST Number", s: 1 },       { l: "PAN Number", s: 1 },
-                { l: "City", s: 1 },             { l: "Full Address", s: 2 },
+                { l: "Company Name *", key: "name" }, { l: "Contact Person *", key: "contact" },
+                { l: "Phone Number *", key: "phone" },  { l: "Email Address *", key: "email" },
+                { l: "Full Address", key: "address", s: 2 },
               ].map(f => (
                 <div key={f.l} className={f.s === 2 ? "col-span-2" : ""}>
                   <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{f.l}</label>
-                  <input placeholder={`Enter ${f.l.replace(" *","").toLowerCase()}`}
+                  <input
+                    placeholder={`Enter ${f.l.replace(" *","").toLowerCase()}`}
+                    value={form[f.key as keyof typeof form]}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
                     className="ims-input w-full px-3 py-2.5 rounded-xl"
                     style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }} />
                 </div>
@@ -235,7 +273,9 @@ export function Suppliers() {
             </div>
             <div className="flex gap-3 px-6 py-4 justify-end" style={{ borderTop: "1px solid #f1f5f9", background: "#f8fafc" }}>
               <button onClick={() => setShowAdd(false)} className="btn-secondary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px" }}>Cancel</button>
-              <button onClick={() => { setShowAdd(false); toast.success("Supplier added successfully"); }} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>Save Supplier</button>
+              <button onClick={handleSaveSupplier} disabled={saving} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #1d4ed8, #2563eb)" }}>
+                {saving ? "Saving..." : "Save Supplier"}
+              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Plus, Search, Download, CheckCircle2, X, PackageX } from "lucide-react";
 import { toast } from "sonner";
-import { getStockOutItems, type StockOutItem } from "../lib/appData";
+import { getStockOutItems, createStockOutItem, type StockOutItem } from "../lib/appData";
+import { ApiError } from "../lib/api";
 
 const DEPTS = ["Underground Mining","Drilling Section","Transport","Maintenance","Mechanical","Surface Mining","Finance","Administration","HR","Safety"];
 
@@ -13,6 +14,15 @@ export function StockOut() {
   const [success,  setSuccess]  = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    item: "",
+    quantity: "",
+    department: DEPTS[0],
+    employee: "",
+    date: new Date().toISOString().slice(0, 10),
+    purpose: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -23,8 +33,8 @@ export function StockOut() {
         setError("");
         const items = await getStockOutItems();
         if (active) setStockOutData(items);
-      } catch {
-        if (active) setError("Unable to load stock-out records.");
+      } catch (err) {
+        if (active) setError(err instanceof ApiError ? err.message : "Unable to load stock-out records.");
       } finally {
         if (active) setLoading(false);
       }
@@ -48,11 +58,40 @@ export function StockOut() {
   const totalQtyIssued = stockOutData.reduce((sum, item) => sum + item.quantity, 0);
   const departmentsServed = new Set(stockOutData.map((item) => item.department)).size;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccess(true);
-    toast.success("Items issued successfully", { description: "Stock out recorded and inventory updated." });
-    setTimeout(() => { setSuccess(false); setShowForm(false); }, 2200);
+    if (!form.item.trim() || !form.employee.trim() || !form.quantity) {
+      toast.error("Item name, employee, and quantity are required.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const created = await createStockOutItem({
+        item: form.item.trim(),
+        quantity: Number(form.quantity),
+        department: form.department,
+        employee: form.employee.trim(),
+        date: form.date,
+        purpose: form.purpose.trim(),
+      });
+      setStockOutData((current) => [created, ...current]);
+      setForm({
+        item: "",
+        quantity: "",
+        department: DEPTS[0],
+        employee: "",
+        date: new Date().toISOString().slice(0, 10),
+        purpose: "",
+      });
+      setSuccess(true);
+      toast.success("Items issued successfully", { description: "Stock out recorded and inventory updated." });
+      setTimeout(() => { setSuccess(false); setShowForm(false); }, 2200);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to record stock issue.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -206,28 +245,38 @@ export function StockOut() {
                 </div>
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                   {[
-                    { label: "Item Name *",        type: "text",   placeholder: "Search or select item name" },
-                    { label: "Quantity to Issue *", type: "number", placeholder: "Enter quantity" },
-                    { label: "Department *",        type: "select" },
-                    { label: "Employee Name & ID *",type: "text",   placeholder: "e.g. R.K. Sharma (EMP-1045)" },
-                    { label: "Issue Date *",        type: "date",   placeholder: "" },
-                    { label: "Purpose / Remarks",   type: "text",   placeholder: "Purpose of issue or work order reference..." },
+                    { label: "Item Name *",        key: "item",       type: "text",   placeholder: "Search or select item name" },
+                    { label: "Quantity to Issue *", key: "quantity",   type: "number", placeholder: "Enter quantity" },
+                    { label: "Department *",        key: "department", type: "select" },
+                    { label: "Employee Name & ID *",key: "employee",   type: "text",   placeholder: "e.g. R.K. Sharma (EMP-1045)" },
+                    { label: "Issue Date *",        key: "date",       type: "date",   placeholder: "" },
+                    { label: "Purpose / Remarks",   key: "purpose",    type: "text",   placeholder: "Purpose of issue or work order reference..." },
                   ].map(f => (
                     <div key={f.label}>
                       <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#374151", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{f.label}</label>
                       {f.type === "select" ? (
-                        <select className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
+                        <select
+                          value={form.department}
+                          onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
+                          className="ims-input w-full px-3 py-2.5 rounded-xl" style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }}>
                           {DEPTS.map(d => <option key={d}>{d}</option>)}
                         </select>
                       ) : (
-                        <input type={f.type} placeholder={f.placeholder} className="ims-input w-full px-3 py-2.5 rounded-xl"
+                        <input
+                          type={f.type}
+                          placeholder={f.placeholder}
+                          value={form[f.key as keyof typeof form]}
+                          onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                          className="ims-input w-full px-3 py-2.5 rounded-xl"
                           style={{ border: "1.5px solid #e2e8f0", fontSize: "0.85rem", background: "#f8fafc" }} />
                       )}
                     </div>
                   ))}
                   <div className="flex gap-3 pt-2 justify-end">
                     <button type="button" onClick={() => setShowForm(false)} className="btn-secondary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px" }}>Cancel</button>
-                    <button type="submit" className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #6d28d9, #7c3aed)" }}>Confirm Issue</button>
+                    <button type="submit" disabled={submitting} className="btn-primary px-5 py-2.5 rounded-xl" style={{ fontSize: "0.85rem", borderRadius: "10px", background: "linear-gradient(135deg, #6d28d9, #7c3aed)" }}>
+                      {submitting ? "Saving..." : "Confirm Issue"}
+                    </button>
                   </div>
                 </form>
               </>
